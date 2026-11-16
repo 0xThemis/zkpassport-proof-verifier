@@ -7,6 +7,7 @@ import {
 } from "@zkpassport/utils"
 import { ZKPassport } from "@zkpassport/sdk"
 import { IGNORE_VALIDITY_SECONDS } from "../validity"
+import { verifyOprfAuthProof } from "../lib/oprf-auth-proof"
 
 interface VerifyOprfRequest {
   blinded_unique_identifier: string
@@ -31,7 +32,7 @@ export async function verifyOprfRoute(fastify: FastifyInstance) {
 
     const { blinded_unique_identifier, proofs } = request.body
 
-    const isDevMode = request.query && (request.query as any).devmode === "true"
+    const isDevMode = (request.query as { devmode?: string } | undefined)?.devmode === "true"
 
     log.info(
       { event: "received", proofCount: Array.isArray(proofs) ? proofs.length : null, devMode: isDevMode },
@@ -115,11 +116,12 @@ export async function verifyOprfRoute(fastify: FastifyInstance) {
         })
       }
 
-      // Use ZKPassport SDK to verify all proofs (commitment chain + cryptographic verification).
+      // The SDK verifies the identity proofs (commitment chain + cryptographic verification) and
+      // rejects any proof it has no check for, so the oprf_auth proof is verified apart from it.
       log.info({ event: "sdk_verify_start" }, "Running ZKPassport SDK proof verification")
       const zkpassport = new ZKPassport("*")
       const { verified, queryResultErrors } = await zkpassport.verify({
-        proofs,
+        proofs: proofs.filter((p) => p !== oprfAuthProof),
         // Ignore facematch validation in dev mode
         originalQuery: { facematch: { mode: isDevMode ? "regular" : "strict", passed: true } },
         queryResult: { facematch: { mode: isDevMode ? "regular" : "strict", passed: true } },
@@ -136,6 +138,25 @@ export async function verifyOprfRoute(fastify: FastifyInstance) {
         return reply.status(400).send({
           verified: false,
           error: `Proof verification failed: ${JSON.stringify(queryResultErrors ?? {})}`,
+        })
+      }
+
+      if (oprfAuthProof.version !== facematchProof.version) {
+        log.warn({ event: "mismatch", check: "version" }, "oprf_auth circuit version differs")
+        return reply.status(400).send({
+          verified: false,
+          error: "oprf_auth proof must be of the same circuit version as the other proofs",
+        })
+      }
+
+      if (!(await verifyOprfAuthProof(oprfAuthProof, isDevMode))) {
+        log.warn(
+          { event: "verification_failed", proof: "oprf_auth", durationMs: Date.now() - startedAt },
+          "oprf_auth proof verification failed",
+        )
+        return reply.status(400).send({
+          verified: false,
+          error: "Proof verification failed: oprf_auth proof is not valid",
         })
       }
 
