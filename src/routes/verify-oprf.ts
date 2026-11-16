@@ -5,7 +5,7 @@ import {
   getNumberOfPublicInputs,
   getCommitmentInFromDisclosureProof,
 } from "@zkpassport/utils"
-import { ZKPassport } from "@zkpassport/sdk"
+import { VerificationTier, ZKPassport } from "@zkpassport/sdk"
 import { IGNORE_VALIDITY_SECONDS } from "../validity"
 import { verifyOprfAuthProof } from "../lib/oprf-auth-proof"
 
@@ -18,6 +18,9 @@ interface VerifyOprfResponse {
   verified: boolean
   error?: string
 }
+
+// The base proofs differ by credential: three for a chip read, one for an attested ID or Aadhaar
+const MIN_PROOF_COUNT = 3
 
 // oprf_auth circuit has 3 public inputs: comm_in (1 input) + (x, y) blinded query point (2 outputs)
 const OPRF_AUTH_PUBLIC_INPUT_COUNT = 3
@@ -47,14 +50,14 @@ export async function verifyOprfRoute(fastify: FastifyInstance) {
       })
     }
 
-    if (proofs.length !== 5) {
+    if (proofs.length < MIN_PROOF_COUNT) {
       log.warn(
         { event: "bad_request", reason: "proof_count", proofCount: proofs.length },
         "Unexpected number of subproofs",
       )
       return reply.status(400).send({
         verified: false,
-        error: `Expected 5 subproofs (3 base + facematch + oprf_auth), got ${proofs.length}`,
+        error: `Expected at least ${MIN_PROOF_COUNT} subproofs (base + facematch + oprf_auth), got ${proofs.length}`,
       })
     }
 
@@ -126,6 +129,10 @@ export async function verifyOprfRoute(fastify: FastifyInstance) {
         originalQuery: { facematch: { mode: isDevMode ? "regular" : "strict", passed: true } },
         queryResult: { facematch: { mode: isDevMode ? "regular" : "strict", passed: true } },
         devMode: isDevMode,
+        allowedVerificationMethods: [
+          VerificationTier.GOVERNMENT_SIGNED,
+          VerificationTier.DEVICE_ATTESTED,
+        ],
         validity: isDevMode ? IGNORE_VALIDITY_SECONDS : undefined,
         verifierMode: "local",
       } as any)

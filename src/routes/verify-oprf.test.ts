@@ -69,7 +69,7 @@ describe("POST /oprf/verify", () => {
     assert.equal(res.statusCode, 400)
     const body = res.json()
     assert.equal(body.verified, false)
-    assert.match(body.error, /Expected 5 subproofs/)
+    assert.match(body.error, /Expected at least 3 subproofs/)
   })
 
   it("should return 400 when required proof types are missing", async () => {
