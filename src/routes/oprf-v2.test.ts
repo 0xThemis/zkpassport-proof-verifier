@@ -129,7 +129,12 @@ describe("POST /oprf/v2/<step>", () => {
   }
 
   before(async () => {
-    const createBackend = () => backend
+    // The app keeps the backend it creates, so hand it one that forwards to the current fake
+    const createBackend = (): ProofBackend => ({
+      isCertificateRootValid: (root) => backend.isCertificateRootValid(root),
+      verifyProof: (p, count) => backend.verifyProof(p, count),
+      close: () => backend.close(),
+    })
     app = buildApp({
       oprf: { createBackend, verifyFacematch, registrationPublicKey: K_REG },
     })
@@ -160,7 +165,6 @@ describe("POST /oprf/v2/<step>", () => {
         `${NAMES.integrity}/2`,
         "oprf_auth/3",
       ])
-      assert.equal(backend.closed, true)
     })
 
     it("register: verifies 3 base + oprf_registration", async () => {
@@ -354,8 +358,33 @@ describe("POST /oprf/v2/<step>", () => {
     it("returns 503 when the registry is unreachable, so the node retries", async () => {
       backend.unavailable = true
       await expectRejected(requests.identify(), /registry down/, 503)
-      assert.equal(backend.closed, true)
     })
+  })
+})
+
+describe("POST /oprf/v2/<step> backend lifetime", () => {
+  it("uses one backend per network across requests and closes it with the app", async () => {
+    const created: FakeBackend[] = []
+    const app = buildApp({
+      oprf: {
+        createBackend: () => {
+          const backend = new FakeBackend()
+          created.push(backend)
+          return backend
+        },
+        verifyFacematch: async () => ({ verified: true }),
+        registrationPublicKey: K_REG,
+      },
+    })
+    const { mode, ...payload } = requests.identify()
+    for (const url of [`/oprf/v2/${mode}`, `/oprf/v2/${mode}`, `/oprf/v2/${mode}?devmode=true`]) {
+      const res = await app.inject({ method: "POST", url, payload })
+      assert.equal(res.statusCode, 200, res.body)
+    }
+    assert.equal(created.length, 2)
+    assert.deepEqual(created.map((b) => b.closed), [false, false])
+    await app.close()
+    assert.deepEqual(created.map((b) => b.closed), [true, true])
   })
 })
 

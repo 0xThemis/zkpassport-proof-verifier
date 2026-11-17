@@ -4,6 +4,8 @@ import { verifyOprfRoute } from "./routes/verify-oprf"
 import { verifyRoute } from "./routes/verify"
 import { oprfV2Routes, type OprfOptions } from "./routes/oprf-v2"
 import { circuitsStaticRoutes } from "./circuits-static"
+import { getCircuitsUrl } from "./oprf-v2/config"
+import { RegistryProofBackend, sharedBackends } from "./oprf-v2/proof-backend"
 
 export function buildApp(
   opts: {
@@ -28,9 +30,17 @@ export function buildApp(
   })
 
   if (opts.circuitsDir) fastify.register(circuitsStaticRoutes, { dir: opts.circuitsDir })
-  fastify.register(verifyOprfRoute, opts.oprf ?? {})
+  const { circuitsUrl: circuitsUrlOption, createBackend, ...oprf } = opts.oprf ?? {}
+  const circuitsUrl = opts.oprf && "circuitsUrl" in opts.oprf ? circuitsUrlOption : getCircuitsUrl()
+  // bb and the circuit vkeys are expensive to set up, so every request shares them
+  const backends = sharedBackends(
+    createBackend ?? ((devMode) => new RegistryProofBackend({ devMode, circuitsUrl })),
+  )
+  fastify.addHook("onClose", () => backends.close())
+
+  fastify.register(verifyOprfRoute, { getBackend: backends.get })
   fastify.register(verifyRoute)
-  fastify.register(oprfV2Routes, opts.oprf ?? {})
+  fastify.register(oprfV2Routes, { ...oprf, getBackend: backends.get })
 
   return fastify
 }

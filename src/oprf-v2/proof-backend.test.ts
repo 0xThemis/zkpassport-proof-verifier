@@ -66,3 +66,83 @@ describe("RegistryProofBackend circuit sources", () => {
     assert.equal(fetched.length, before)
   })
 })
+
+describe("RegistryProofBackend reused across requests", () => {
+  const proof = (name: string, version: string) =>
+    ({ name, version, proof: "00".repeat(32 * 4) }) as ProofResult
+
+  function fakeVerifiers(results: Array<boolean | Error>) {
+    const state = { loaded: 0, destroyed: 0 }
+    const loadVerifier = async () => {
+      state.loaded++
+      return {
+        async verifyProof() {
+          const next = results.shift() ?? true
+          if (next instanceof Error) throw next
+          return next
+        },
+        async destroy() {
+          state.destroyed++
+        },
+      }
+    }
+    return { loadVerifier, state }
+  }
+
+  it("loads bb once and fetches each circuit once", async () => {
+    const { createClient, fetched } = fakeClients()
+    const { loadVerifier, state } = fakeVerifiers([])
+    const backend = new RegistryProofBackend({ devMode: true, createClient, loadVerifier })
+    for (let i = 0; i < 3; i++) {
+      assert.equal(await backend.verifyProof(proof("sig_check_dsc", "0.22.0"), 3), true)
+    }
+    assert.deepEqual(fetched, ["registry:sig_check_dsc"])
+    assert.equal(state.loaded, 1)
+    await backend.close()
+    assert.equal(state.destroyed, 1)
+  })
+
+  it("fetches a circuit again after a failed fetch", async () => {
+    const { createClient } = fakeClients()
+    let down = true
+    const flaky = ((chain: any, overrides: any) => {
+      const client = (createClient as any)(chain, overrides)
+      return {
+        ...client,
+        async getCircuitManifest(...args: any[]) {
+          if (down) throw new Error("registry down")
+          return client.getCircuitManifest(...args)
+        },
+      }
+    }) as unknown as typeof createRegistryClient
+    const backend = new RegistryProofBackend({
+      devMode: true,
+      createClient: flaky,
+      loadVerifier: fakeVerifiers([]).loadVerifier,
+    })
+    await assert.rejects(backend.verifyProof(proof("sig_check_dsc", "0.22.0"), 3), {
+      name: "ServiceUnavailableError",
+    })
+    down = false
+    assert.equal(await backend.verifyProof(proof("sig_check_dsc", "0.22.0"), 3), true)
+    await backend.close()
+  })
+
+  it("replaces a bb instance that fails mid-call and retries the proof on the new one", async () => {
+    const { createClient } = fakeClients()
+    const { loadVerifier, state } = fakeVerifiers([new Error("bb exited"), true])
+    const backend = new RegistryProofBackend({ devMode: true, createClient, loadVerifier })
+    assert.equal(await backend.verifyProof(proof("sig_check_dsc", "0.22.0"), 3), true)
+    assert.equal(state.loaded, 2)
+    assert.equal(state.destroyed, 1)
+    await backend.close()
+  })
+
+  it("rejects a proof bb throws on twice", async () => {
+    const { createClient } = fakeClients()
+    const { loadVerifier } = fakeVerifiers([new Error("bad proof"), new Error("bad proof")])
+    const backend = new RegistryProofBackend({ devMode: true, createClient, loadVerifier })
+    assert.equal(await backend.verifyProof(proof("sig_check_dsc", "0.22.0"), 3), false)
+    await backend.close()
+  })
+})

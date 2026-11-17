@@ -1,14 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 import type { ProofResult } from "@zkpassport/utils"
-import {
-  BN254_FR_MODULUS,
-  getCircuitsUrl,
-  getRegistrationOprfPublicKey,
-  type Point,
-} from "../oprf-v2/config"
+import { BN254_FR_MODULUS, getRegistrationOprfPublicKey, type Point } from "../oprf-v2/config"
 import { verifyFacematchWithSdk } from "../oprf-v2/facematch"
-import { RegistryProofBackend, type ProofBackend } from "../oprf-v2/proof-backend"
+import type { GetBackend, ProofBackend } from "../oprf-v2/proof-backend"
 import {
   MODES,
   verifyBundle,
@@ -61,19 +56,20 @@ interface OprfV2Response {
 
 export type OprfOptions = {
   circuitsUrl?: string
+  /** Called once per network; the app keeps the backend until it closes */
   createBackend?: (devMode: boolean) => ProofBackend
   verifyFacematch?: FacematchVerifier
   registrationPublicKey?: Point
 }
 
+export type OprfV2RouteOptions = Pick<OprfOptions, "verifyFacematch" | "registrationPublicKey"> & {
+  getBackend: GetBackend
+}
+
 // POST /oprf/v2/<step>: 200 verified, 400 rejected, 503 could not run (the node retries)
-export async function oprfV2Routes(fastify: FastifyInstance, opts: OprfOptions) {
-  const circuitsUrl = "circuitsUrl" in opts ? opts.circuitsUrl : getCircuitsUrl()
+export async function oprfV2Routes(fastify: FastifyInstance, opts: OprfV2RouteOptions) {
   const registrationPublicKey =
     "registrationPublicKey" in opts ? opts.registrationPublicKey : getRegistrationOprfPublicKey()
-  const createBackend =
-    opts.createBackend ??
-    ((devMode: boolean) => new RegistryProofBackend({ devMode, circuitsUrl }))
   const verifyFacematch = opts.verifyFacematch ?? verifyFacematchWithSdk
 
   const handle = async (
@@ -105,7 +101,7 @@ export async function oprfV2Routes(fastify: FastifyInstance, opts: OprfOptions) 
       "oprf v2 request received",
     )
 
-    const backend = createBackend(devMode)
+    const backend = opts.getBackend(devMode)
     try {
       const verdict = await verifyBundle(
         {
@@ -130,8 +126,6 @@ export async function oprfV2Routes(fastify: FastifyInstance, opts: OprfOptions) 
     } catch (err) {
       log.error({ err, event: "error", durationMs: Date.now() - startedAt }, "oprf v2 request threw")
       return reply.status(500).send({ verified: false, error: "Internal verification error" })
-    } finally {
-      await backend.close()
     }
   }
 

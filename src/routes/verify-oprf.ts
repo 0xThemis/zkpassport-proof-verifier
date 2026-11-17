@@ -7,12 +7,7 @@ import {
 } from "@zkpassport/utils"
 import { ZKPassport } from "@zkpassport/sdk"
 import { IGNORE_VALIDITY_SECONDS } from "../validity"
-import { getCircuitsUrl } from "../oprf-v2/config"
-import {
-  RegistryProofBackend,
-  ServiceUnavailableError,
-  type ProofBackend,
-} from "../oprf-v2/proof-backend"
+import { ServiceUnavailableError, type GetBackend } from "../oprf-v2/proof-backend"
 
 interface VerifyOprfRequest {
   blinded_unique_identifier: string
@@ -28,15 +23,10 @@ interface VerifyOprfResponse {
 const OPRF_AUTH_PUBLIC_INPUT_COUNT = 3
 
 export type VerifyOprfOptions = {
-  circuitsUrl?: string
-  createBackend?: (devMode: boolean) => ProofBackend
+  getBackend: GetBackend
 }
 
-export async function verifyOprfRoute(fastify: FastifyInstance, opts: VerifyOprfOptions = {}) {
-  const circuitsUrl = "circuitsUrl" in opts ? opts.circuitsUrl : getCircuitsUrl()
-  const createBackend =
-    opts.createBackend ??
-    ((devMode: boolean) => new RegistryProofBackend({ devMode, circuitsUrl }))
+export async function verifyOprfRoute(fastify: FastifyInstance, opts: VerifyOprfOptions) {
 
   const handler: RouteHandler<{ Body: VerifyOprfRequest; Reply: VerifyOprfResponse }> = async (
     request,
@@ -155,13 +145,9 @@ export async function verifyOprfRoute(fastify: FastifyInstance, opts: VerifyOprf
         })
       }
 
-      const backend = createBackend(isDevMode)
-      let oprfAuthVerified: boolean
-      try {
-        oprfAuthVerified = await backend.verifyProof(oprfAuthProof, OPRF_AUTH_PUBLIC_INPUT_COUNT)
-      } finally {
-        await backend.close()
-      }
+      const oprfAuthVerified = await opts
+        .getBackend(isDevMode)
+        .verifyProof(oprfAuthProof, OPRF_AUTH_PUBLIC_INPUT_COUNT)
       if (!oprfAuthVerified) {
         log.warn(
           { event: "verification_failed", proof: "oprf_auth", durationMs: Date.now() - startedAt },
