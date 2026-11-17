@@ -42,7 +42,7 @@ type BBVersion = "v5" | "v6"
 
 // Circuits from 0.22.0 on are built with bb 6 (same rule as the SDK)
 export function getBBVersionForCircuitVersion(circuitVersion: string): BBVersion {
-  const parts = circuitVersion.split(".").map(Number)
+  const parts = circuitVersion.split("-")[0].split(".").map(Number)
   if (parts.length !== 3 || parts.some(Number.isNaN)) return "v6"
   const [major, minor] = parts
   return major > 0 || minor >= 22 ? "v6" : "v5"

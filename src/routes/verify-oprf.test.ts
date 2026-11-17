@@ -69,7 +69,7 @@ describe("POST /oprf/verify", () => {
     assert.equal(res.statusCode, 400)
     const body = res.json()
     assert.equal(body.verified, false)
-    assert.match(body.error, /Expected 5 subproofs/)
+    assert.match(body.error, /Expected at least 3 subproofs/)
   })
 
   it("should return 400 when required proof types are missing", async () => {
@@ -191,6 +191,30 @@ describe("POST /oprf/verify", () => {
       const body = res.json()
       assert.equal(body.verified, true, `Expected verified: true, got error: ${body.error}`)
       assert.equal(res.statusCode, 200)
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
+  it("should reject an oprf_auth proof that does not verify", async () => {
+    const facematch = fixture.proofs.find((p: { name?: string }) => p.name?.startsWith("facematch"))
+    const proofData = getProofData(facematch.proof, getNumberOfPublicInputs(facematch.name))
+    mock.timers.enable({ apis: ["Date"], now: getCurrentDateFromDisclosureProof(proofData) })
+
+    const flipLastByte = (hex: string) => hex.slice(0, -2) + (hex.endsWith("00") ? "01" : "00")
+    const proofs = fixture.proofs.map((p: { name?: string; proof: string }) =>
+      p.name?.startsWith("oprf_auth") ? { ...p, proof: flipLastByte(p.proof) } : p,
+    )
+
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/verify-oprf-auth?devmode=true",
+        payload: { blinded_unique_identifier: fixture.blinded_unique_identifier, proofs },
+      })
+
+      assert.equal(res.statusCode, 400)
+      assert.match(res.json().error, /oprf_auth proof is not valid/)
     } finally {
       mock.timers.reset()
     }

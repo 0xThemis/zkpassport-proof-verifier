@@ -22,6 +22,8 @@ const verifyRequestSchema = z.object({
   serviceConfig: serviceConfigSchema.optional(),
   options: z.object({ ignoreValidity: z.boolean().optional() }).optional(),
   oprfKeyId: z.string().optional(),
+  // Tiers and/or exact schemes the service accepts; the SDK's default applies without it
+  allowedVerificationMethods: z.array(z.number().int()).optional(),
 })
 
 type VerifyResponse = Partial<VerificationResult> & {
@@ -94,6 +96,7 @@ export async function verifyRoute(fastify: FastifyInstance) {
         validity: ignoreValidity ? IGNORE_VALIDITY_SECONDS : serviceConfig.validityPeriodInSeconds,
         devMode: serviceConfig.devMode,
         oprfKeyId: body.oprfKeyId,
+        allowedVerificationMethods: body.allowedVerificationMethods,
         verifierMode: "local",
       })
 
