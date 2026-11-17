@@ -73,6 +73,25 @@ Locally, copy or extract the directory to `packaged/` and `docker build .`.
 docker run -p 8080:8080 -e OPRF_REGISTRATION_PUBLIC_KEY="<x>,<y>" ghcr.io/zkpassport/zkpassport-proof-verifier:<tag>
 ```
 
+### OPRF v2 test bundles
+
+`src/test/fixtures/oprf-v2/` holds one request body per v2 step (`identify.json`, `register.json`,
+`query.json`, `rotate.json`) for a ZKR mock passport, written by `packages/e2e/scripts/oprf-v2-requests.ts`
+in zkpassport-packages. The registration proofs use a fixed mock registration key and an
+oprf_registration circuit packaged next to them, which the image already contains, so any image of
+this branch can verify them:
+
+```bash
+KEY=$(node -p "require('./src/test/fixtures/oprf-v2/meta.json').OPRF_REGISTRATION_PUBLIC_KEY")
+docker run -p 8080:8080 -e OPRF_REGISTRATION_PUBLIC_KEY="$KEY" \
+  -e CIRCUITS_DIR=/app/src/test/fixtures/oprf-v2/packaged \
+  ghcr.io/zkpassport/zkpassport-proof-verifier:as-oprf-v2-verify-passport-proof
+curl -X POST -H 'content-type: application/json' --data @src/test/fixtures/oprf-v2/identify.json \
+  'http://localhost:8080/oprf/v2/identify?devmode=true'
+```
+
+Call the routes with `?devmode=true`: the mock passport is only valid there.
+
 ## Usage
 
 ```bash
