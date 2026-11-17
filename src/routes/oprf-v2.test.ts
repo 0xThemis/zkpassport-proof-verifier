@@ -167,6 +167,22 @@ describe("POST /oprf/v2/<step>", () => {
       ])
     })
 
+    it("reads each proof's public inputs by its circuit version", async () => {
+      // From 0.23.0 the integrity proof has a third public input, the verification method
+      const v23 = "0.23.0"
+      const res = await send({
+        ...requests.identify(),
+        proofs: [
+          proof(NAMES.dsc, [ROOT, 11n], v23),
+          proof(NAMES.idData, [11n, 12n], v23),
+          proof(NAMES.integrity, [12n, P, 1n], v23),
+          proof("oprf_auth", [P, B.x, B.y], v23),
+        ],
+      })
+      assert.equal(res.status, 200, JSON.stringify(res.body))
+      assert.ok(backend.verified.includes(`${NAMES.integrity}/3`), backend.verified.join(", "))
+    })
+
     it("register: verifies 3 base + oprf_registration", async () => {
       const res = await send(requests.register())
       assert.equal(res.status, 200, JSON.stringify(res.body))

@@ -71,10 +71,11 @@ function getProofKind(name: string | undefined): ProofKind | undefined {
   return undefined
 }
 
-function getPublicInputCount(kind: ProofKind, name: string): number {
+function getPublicInputCount(kind: ProofKind, proof: ProofResult): number {
   if (kind === "oprf_auth") return OPRF_AUTH_PUBLIC_INPUT_COUNT
   if (kind === "oprf_registration") return OPRF_REGISTRATION_PUBLIC_INPUT_COUNT
-  return getNumberOfPublicInputs(name)
+  // The layout can change between circuit versions (0.23.0 added one to the integrity proof)
+  return getNumberOfPublicInputs(proof.name!, proof.version)
 }
 
 const samePoint = (a: Point, b: Point) => a.x === b.x && a.y === b.y
@@ -135,7 +136,7 @@ export async function verifyBundle(req: BundleRequest, ctx: VerifyContext): Prom
   const proofData = new Map<ProofKind, ReturnType<typeof getProofData>>()
   try {
     for (const [kind, proof] of byKind) {
-      const count = getPublicInputCount(kind, proof.name!)
+      const count = getPublicInputCount(kind, proof)
       const hex = proof.proof as string
       if (!/^([0-9a-fA-F]{64})+$/.test(hex) || hex.length / 64 <= count) {
         return reject(`Malformed proof: ${proof.name}`)
@@ -213,7 +214,7 @@ export async function verifyBundle(req: BundleRequest, ctx: VerifyContext): Prom
     }
 
     for (const [kind, proof] of toVerify) {
-      if (!(await ctx.backend.verifyProof(proof, getPublicInputCount(kind, proof.name!)))) {
+      if (!(await ctx.backend.verifyProof(proof, getPublicInputCount(kind, proof)))) {
         return reject(`Proof verification failed: ${proof.name}@${proof.version}`)
       }
     }
