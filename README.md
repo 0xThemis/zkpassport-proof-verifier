@@ -58,7 +58,8 @@ API service that verifies ZKPassport proofs server-side, so that services which 
 ## Docker image
 
 The "Publish image" workflow is run by hand (Actions, pick the branch) and publishes
-`ghcr.io/zkpassport/zkpassport-proof-verifier:<branch>` (and `:sha-<commit>`). To bake unreleased
+`europe-west2-docker.pkg.dev/proof-verifier/proof-verifier/proof-verifier:<branch>` (and
+`:sha-<commit>`), in the public Artifact Registry repository, without deploying it. To bake unreleased
 circuits into an image, give it the URL of a tarball of the packaged circuits directory, which
 tags the image `:<branch>-circuits` as well:
 
@@ -70,7 +71,7 @@ tar -czf packaged.tar.gz -C target/packaged .
 Locally, copy or extract the directory to `packaged/` and `docker build .`.
 
 ```bash
-docker run -p 8080:8080 -e OPRF_REGISTRATION_PUBLIC_KEY="<x>,<y>" ghcr.io/zkpassport/zkpassport-proof-verifier:<tag>
+docker run -p 8080:8080 -e OPRF_REGISTRATION_PUBLIC_KEY="<x>,<y>" europe-west2-docker.pkg.dev/proof-verifier/proof-verifier/proof-verifier:<tag>
 ```
 
 ### OPRF v2 test bundles
@@ -85,7 +86,7 @@ this branch can verify them:
 KEY=$(node -p "require('./src/test/fixtures/oprf-v2/meta.json').OPRF_REGISTRATION_PUBLIC_KEY")
 docker run -p 8080:8080 -e OPRF_REGISTRATION_PUBLIC_KEY="$KEY" \
   -e CIRCUITS_DIR=/app/src/test/fixtures/oprf-v2/packaged \
-  ghcr.io/zkpassport/zkpassport-proof-verifier:as-oprf-v2-verify-passport-proof
+  europe-west2-docker.pkg.dev/proof-verifier/proof-verifier/proof-verifier:as-oprf-v2-verify-passport-proof
 curl -X POST -H 'content-type: application/json' --data @src/test/fixtures/oprf-v2/identify.json \
   'http://localhost:8080/oprf/v2/identify?devmode=true'
 ```
